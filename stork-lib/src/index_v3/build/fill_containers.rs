@@ -1,5 +1,5 @@
 use rust_stemmers::Stemmer;
-use std::{collections::BTreeMap, convert::TryInto, ops::Range};
+use std::{collections::BTreeMap, convert::TryInto};
 
 use crate::{
     config::Config,
@@ -34,7 +34,10 @@ pub fn fill_containers(
                 let normalized_word =
                     remove_surrounding_punctuation(&annotated_word.word.to_lowercase());
 
-                if normalized_word.is_empty() {
+                const MAX_WORD_LENGTH: usize = 2usize.pow(12);
+
+                // Filter out empty and pathologically long words
+                if normalized_word.is_empty() || normalized_word.len() > MAX_WORD_LENGTH {
                     continue;
                 }
 
@@ -104,27 +107,33 @@ fn fill_other_containers_alias_maps_with_prefixes(
     containers: &mut BTreeMap<String, Container>,
     normalized_word: &str,
 ) {
-    let chars: Vec<char> = normalized_word.chars().collect();
+    let characters_in_string = normalized_word.chars().count();
 
-    let substring_max_length_range: Range<usize> = if string_is_cjk_ideographic(&chars) {
-        (ideograph_prefix_length as usize)..chars.len()
+    let skip_chars: usize = if string_is_cjk_ideographic(normalized_word.chars()) {
+        ideograph_prefix_length as usize
     } else {
-        (prefix_length as usize)..chars.len()
+        prefix_length as usize
     };
 
-    for n in substring_max_length_range {
-        let substring: String = chars[0..n].iter().collect();
+    for (char_count, (char_boundary, _)) in
+        normalized_word.char_indices().enumerate().skip(skip_chars)
+    {
+        let substring = &normalized_word[..char_boundary];
 
-        let alises_map = &mut containers
-            .entry(substring.clone())
-            .or_insert_with(Container::new)
-            .aliases;
+        if !containers.contains_key(substring) {
+            containers.insert(substring.to_string(), Container::new());
+        }
+        let alises_map = &mut containers.get_mut(substring).unwrap().aliases;
 
         let _alias_score = alises_map
             .entry(normalized_word.to_string())
             .or_insert_with(|| {
-                PREFIX_SCORE
-                    .saturating_sub(chars.len().saturating_sub(n).try_into().unwrap_or(u8::MAX))
+                PREFIX_SCORE.saturating_sub(
+                    characters_in_string
+                        .saturating_sub(char_count)
+                        .try_into()
+                        .unwrap_or(u8::MAX),
+                )
             });
     }
 }
@@ -154,14 +163,12 @@ fn fill_other_containers_alias_maps_with_reverse_stems(
     }
 }
 
-fn string_is_cjk_ideographic(s: &[char]) -> bool {
-    s.iter()
-        .map(char_is_cjk_ideograph)
-        .fold(true, |acc, x| acc & x)
+fn string_is_cjk_ideographic(mut s: impl Iterator<Item = char>) -> bool {
+    s.all(char_is_cjk_ideograph)
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
-fn char_is_cjk_ideograph(c: &char) -> bool {
+fn char_is_cjk_ideograph(c: char) -> bool {
     // Block ranges sourced from https://en.wikipedia.org/wiki/CJK_Unified_Ideographs#CJK_Unified_Ideographs_blocks
     matches!(c,
         // CJK Unified Ideographs
