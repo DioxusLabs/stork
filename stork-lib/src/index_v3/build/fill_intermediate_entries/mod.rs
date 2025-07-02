@@ -135,7 +135,7 @@ pub(super) fn fill_intermediate_entries(
 
                 document_errors.push(document_error);
             }
-        };
+        }
     }
 
     if config.input.break_on_file_error && !document_errors.is_empty() {
@@ -151,6 +151,7 @@ fn build_progress_bar(config: &Config) -> ProgressBar {
     let progress_bar = ProgressBar::new((config.input.files.len()).try_into().unwrap()).with_style(
         ProgressStyle::default_bar()
             .template("[{elapsed}] {bar:40.cyan/blue} {pos}/{len} | {msg}")
+            .unwrap()
             .progress_chars("##-"),
     );
 
@@ -165,7 +166,7 @@ fn build_progress_bar(config: &Config) -> ProgressBar {
     let progress_bar_draw_target = {
         match url_file_count {
             0 => ProgressDrawTarget::hidden(),
-            _ => ProgressDrawTarget::stderr_nohz(),
+            _ => ProgressDrawTarget::stderr(),
         }
     };
 
